@@ -1,0 +1,130 @@
+import csv
+import heapq
+import random
+import time
+from pathlib import Path
+
+
+def parse_time(value):
+    """Convert HH:MM into minutes since midnight."""
+    try:
+        hours, minutes = map(int, value.strip().split(":"))
+    except (ValueError, AttributeError):
+        raise ValueError(f"Invalid time: {value!r}. Use HH:MM.")
+
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        raise ValueError(f"Invalid time: {value!r}. Use a valid 24-hour time.")
+    return hours * 60 + minutes
+
+
+def load_meetings(filename):
+    """Read meetings from a CSV file with Meeting, Start, End columns."""
+    meetings = []
+
+    with open(filename, "r", newline="", encoding="utf-8-sig") as file:
+        reader = csv.DictReader(file)
+        required_columns = {"Meeting", "Start", "End"}
+
+        if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
+            raise ValueError("CSV must contain Meeting, Start, and End columns.")
+
+        for row_number, row in enumerate(reader, start=2):
+            start = parse_time(row["Start"])
+            end = parse_time(row["End"])
+
+            if end <= start:
+                raise ValueError(
+                    f"Row {row_number}: meeting end time must be after start time."
+                )
+
+            meetings.append((start, end))
+
+    return meetings
+
+
+def minimum_rooms(meetings):
+    """
+    Return the minimum number of rooms needed.
+
+    Each meeting is represented by (start, end), in minutes.
+    Meetings that end at a meeting's start time free their room.
+    """
+    if not meetings:
+        return 0
+
+    sorted_meetings = sorted(meetings, key=lambda meeting: meeting[0])
+    ending_times = []
+    maximum_rooms = 0
+
+    for start, end in sorted_meetings:
+        if end <= start:
+            raise ValueError("Every meeting must end after it starts.")
+
+        while ending_times and ending_times[0] <= start:
+            heapq.heappop(ending_times)
+
+        heapq.heappush(ending_times, end)
+        maximum_rooms = max(maximum_rooms, len(ending_times))
+
+    return maximum_rooms
+
+
+def generate_meetings(count, seed=42):
+    """Generate repeatable meeting intervals for the experiment."""
+    rng = random.Random(seed + count)
+    meetings = []
+
+    for _ in range(count):
+        start = rng.randint(8 * 60, 17 * 60)
+        duration = rng.randint(15, 120)
+        end = min(start + duration, 20 * 60)
+        meetings.append((start, end))
+
+    return meetings
+
+
+def run_benchmark():
+    """Measure the algorithm on increasing input sizes."""
+    sizes = [100, 500, 1000, 2000, 4000, 8000]
+    results = []
+
+    for size in sizes:
+        meetings = generate_meetings(size)
+        measurements = []
+
+        for _ in range(5):
+            start_time = time.perf_counter()
+            minimum_rooms(meetings)
+            measurements.append(time.perf_counter() - start_time)
+
+        average_time = statistics.mean(measurements)
+        results.append((size, average_time))
+
+    output_file = Path(__file__).with_name("benchmark_results.csv")
+    with open(output_file, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Number of Meetings", "Average Time (seconds)"])
+        writer.writerows(results)
+
+    print("\nBenchmark Results")
+    print("-----------------")
+    for size, elapsed in results:
+        print(f"{size:>6} meetings: {elapsed:.6f} seconds")
+    print(f"\nResults saved to: {output_file.name}")
+
+
+def main():
+    data_file = Path(__file__).with_name("meetings.csv")
+    meetings = load_meetings(data_file)
+    rooms = minimum_rooms(meetings)
+
+    print("MEETING ROOMS")
+    print("-------------")
+    print(f"Number of meetings: {len(meetings)}")
+    print(f"Minimum rooms required: {rooms}")
+
+    run_benchmark()
+
+
+if __name__ == "__main__":
+    main()
